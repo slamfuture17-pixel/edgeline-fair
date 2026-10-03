@@ -1,14 +1,13 @@
 // Walk-forward backtest: Elo-only vs. de-vigged closing line vs. blend, on real finished games.
 import { promises as fs } from "fs";
 import path from "path";
-import { SportKey } from "./sports";
+import { SportKey, SPORTS } from "./sports";
 import { buildElo } from "./elo";
+import { buildAthleteElo } from "./individual";
 import { eventOdds } from "./espn";
 import { fairTwoWay, americanToDecimal } from "./odds";
-import { brier, logLoss } from "./math";
+import { brier, logLoss, blendLogit } from "./math";
 import type { BacktestSummary } from "@/types";
-
-const MARKET_WEIGHT: Record<SportKey, number> = { nfl: 0.7, nba: 0.72, mlb: 0.75, nhl: 0.75 };
 
 function scores(rows: { p: number; y: 0 | 1 }[]) {
   if (!rows.length) return null;
@@ -20,23 +19,30 @@ function scores(rows: { p: number; y: 0 | 1 }[]) {
 }
 
 export async function runBacktest(sport: SportKey, maxMarketGames = 320, onProgress?: (done: number, total: number) => void): Promise<BacktestSummary> {
-  const state = await buildElo(sport);
+  const state = SPORTS[sport].kind === "athlete" ? await buildAthleteElo(sport) : await buildElo(sport);
   const finals = state.history.filter((g) => g.final && isFinite(g.homeScore) && isFinite(g.awayScore) && g.homeScore !== g.awayScore);
   const eloRows = finals.map((g) => ({ p: g.eloHomeProb, y: (g.homeScore > g.awayScore ? 1 : 0) as 0 | 1 }));
 
+  // walk-forward games-played counts so thin-history games lean on the market exactly like the live model
+  const seen: Record<string, number> = {};
+  const thin = new Map<string, boolean>();
+  for (const g of state.history) {
+    thin.set(g.id, (seen[g.home.id] ?? 0) < 3 || (seen[g.away.id] ?? 0) < 3);
+    seen[g.home.id] = (seen[g.home.id] ?? 0) + 1; seen[g.away.id] = (seen[g.away.id] ?? 0) + 1;
+  }
   const sample = finals.slice(-maxMarketGames);
   const mkt: { elo: number; market: number; blend: number; y: 0 | 1; homeML: number; awayML: number }[] = [];
   const batch = 8;
   for (let i = 0; i < sample.length; i += batch) {
     const chunk = sample.slice(i, i + batch);
-    const odds = await Promise.all(chunk.map((g) => eventOdds(sport, g.id, true).catch(() => undefined)));
+    const odds = await Promise.all(chunk.map((g) => eventOdds(sport, g.eventId ?? g.id, true, g.eventId ? g.id : undefined).catch(() => undefined)));
     chunk.forEach((g, j) => {
       const o = odds[j];
       const h = o?.closeHomeML ?? o?.homeML, a = o?.closeAwayML ?? o?.awayML;
       if (h === undefined || a === undefined) return;
       const [pH] = fairTwoWay(h, a);
-      const w = MARKET_WEIGHT[sport];
-      mkt.push({ elo: g.eloHomeProb, market: pH, blend: w * pH + (1 - w) * g.eloHomeProb, y: g.homeScore > g.awayScore ? 1 : 0, homeML: h, awayML: a });
+      const w = thin.get(g.id) ? Math.max(SPORTS[sport].marketWeight, 0.95) : SPORTS[sport].marketWeight;
+      mkt.push({ elo: g.eloHomeProb, market: pH, blend: blendLogit(pH, g.eloHomeProb, w), y: g.homeScore > g.awayScore ? 1 : 0, homeML: h, awayML: a });
     });
     onProgress?.(Math.min(i + batch, sample.length), sample.length);
   }

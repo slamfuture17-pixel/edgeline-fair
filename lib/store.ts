@@ -23,7 +23,7 @@ async function writeLedger(rows: LoggedPrediction[]) {
       await fs.mkdir(path.dirname(FILE), { recursive: true });
       await fs.writeFile(FILE, JSON.stringify(rows));
     } catch {
-      /* read-only filesystem: skip */
+      /* read-only filesystem */
     }
   });
   return writing;
@@ -57,7 +57,8 @@ function gradeSide(row: LoggedPrediction, p: GamePrediction): "win" | "loss" | "
   const total = p.homeScore + p.awayScore;
   const isHome = row.side.startsWith(p.home.abbr);
   if (row.market === "moneyline") {
-    if (margin === 0) return "push";
+    if (row.side === "Draw") return margin === 0 ? "win" : "loss";
+    if (margin === 0) return row.side.endsWith(" win") ? "loss" : "push";
     return (margin > 0) === isHome ? "win" : "loss";
   }
   if (row.market === "spread" && row.line !== undefined) {
