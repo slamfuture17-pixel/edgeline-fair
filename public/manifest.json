@@ -1,0 +1,11 @@
+{
+  "name": "EdgeLine Fair — AI Sports Predictions",
+  "short_name": "EdgeLine",
+  "description": "Calibrated AI predictions and edges for games and player props, built on real data.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07080d",
+  "theme_color": "#07080d",
+  "orientation": "portrait",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

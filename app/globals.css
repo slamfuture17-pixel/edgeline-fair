@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root,
+  .dark {
+    --background: 230 22% 4%;
+    --foreground: 210 30% 96%;
+    --card: 230 20% 7%;
+    --card-foreground: 210 30% 96%;
+    --popover: 230 20% 8%;
+    --popover-foreground: 210 30% 96%;
+    --primary: 152 100% 52%;
+    --primary-foreground: 230 30% 5%;
+    --secondary: 230 14% 13%;
+    --secondary-foreground: 210 30% 96%;
+    --muted: 230 14% 12%;
+    --muted-foreground: 222 12% 64%;
+    --accent: 230 14% 15%;
+    --accent-foreground: 210 30% 96%;
+    --destructive: 340 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 230 12% 16%;
+    --input: 230 12% 18%;
+    --ring: 152 100% 52%;
+    --radius: 0.9rem;
+    --profit: 152 100% 52%;
+    --loss: 340 100% 62%;
+    --pend: 196 100% 60%;
+    --warn: 42 100% 58%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { color-scheme: dark; -webkit-tap-highlight-color: transparent; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(1000px 420px at 50% -160px, hsl(152 100% 52% / 0.10), transparent 60%),
+      radial-gradient(700px 360px at 100% 100%, hsl(196 100% 60% / 0.07), transparent 60%);
+    background-attachment: fixed;
+    overscroll-behavior-y: none;
+  }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+}
+
+@layer utilities {
+  .glass { @apply bg-card/80 backdrop-blur-md border border-border/80; }
+  .num { font-variant-numeric: tabular-nums; }
+  .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem); }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
