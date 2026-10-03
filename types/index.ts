@@ -7,10 +7,12 @@ export interface TeamRef {
   logo?: string;
   color?: string;
   record?: string;
+  rank?: number;
 }
 
 export interface GameResult {
   id: string;
+  eventId?: string;
   sport: SportKey;
   season: number;
   seasonType: number;
@@ -26,6 +28,7 @@ export interface MarketLines {
   provider: string;
   homeML?: number;
   awayML?: number;
+  drawML?: number;
   spreadHome?: number;
   spreadHomeOdds?: number;
   spreadAwayOdds?: number;
@@ -38,6 +41,7 @@ export interface MarketLines {
   openAwayML?: number;
   closeHomeML?: number;
   closeAwayML?: number;
+  closeDrawML?: number;
   closeSpreadHome?: number;
   closeTotal?: number;
   updated?: string;
@@ -70,10 +74,14 @@ export interface Factor {
 export interface GamePrediction {
   id: string;
   sport: SportKey;
+  league: string;
+  kind: "team" | "athlete";
   date: string;
   status: "scheduled" | "live" | "final";
   statusDetail: string;
   seasonType?: number;
+  eventName?: string;
+  round?: string;
   home: TeamRef;
   away: TeamRef;
   homeScore?: number;
@@ -83,6 +91,8 @@ export interface GamePrediction {
   form: { homePF: number; homePA: number; awayPF: number; awayPA: number; games: number };
   model: {
     homeWinProb: number;
+    drawProb?: number;
+    awayWinProb: number;
     expectedMargin: number;
     expectedTotal: number;
     marginSigma: number;
@@ -90,13 +100,14 @@ export interface GamePrediction {
     marketWeight: number;
   };
   market?: MarketLines;
-  marketFair?: { homeWinProb: number; vig: number };
+  marketFair?: { homeWinProb: number; drawProb?: number; vig: number };
   predictions: MarketPrediction[];
   topEdge?: SideEdge & { market: string };
   confidence: "A" | "B" | "C";
   factors: Factor[];
   venue?: string;
   broadcast?: string;
+  modelOnly?: boolean;
 }
 
 export interface PropLine {
@@ -115,15 +126,7 @@ export interface PropLine {
   line: number;
   openLine?: number;
   provider: string;
-  projection: {
-    mean: number;
-    sd: number;
-    median: number;
-    dist: "normal" | "count";
-    n: number;
-    recent: number[];
-    season: number;
-  };
+  projection: { mean: number; sd: number; median: number; dist: "normal" | "count"; n: number; recent: number[]; season: number };
   overProb: number;
   underProb: number;
   pick: "over" | "under";

@@ -59,32 +59,42 @@ export function applyGame(state: EloState, g: GameResult): EloGame {
 }
 
 function regressSeason(state: EloState, carry: number) {
-  for (const id of Object.keys(state.ratings)) {
-    state.ratings[id] = BASE + (state.ratings[id] - BASE) * carry;
-  }
+  for (const id of Object.keys(state.ratings)) state.ratings[id] = BASE + (state.ratings[id] - BASE) * carry;
   state.recent = {};
 }
 
 const stateCache = new Map<string, { exp: number; state: EloState }>();
+const inflight = new Map<string, Promise<EloState>>();
 
+/** Build (or reuse) the Elo state across configured seasons, walk-forward. De-duplicates concurrent builds. */
 export async function buildElo(sport: SportKey): Promise<EloState> {
   const c = stateCache.get(sport);
   if (c && c.exp > Date.now()) return c.state;
-  const cfg = SPORTS[sport];
-  const state: EloState = { sport, ratings: {}, lastGame: {}, recent: {}, history: [], builtAt: new Date().toISOString() };
-  let first = true;
-  for (const season of cfg.seasonsForElo) {
-    const games = await seasonGames(sport, season).catch(() => [] as GameResult[]);
-    if (!games.length) continue;
-    if (!first) regressSeason(state, cfg.carryover);
-    first = false;
-    for (const g of games) {
-      if (!g.final) continue;
-      state.history.push(applyGame(state, g));
+  const running = inflight.get(sport);
+  if (running) return running;
+  const p = (async () => {
+    const cfg = SPORTS[sport];
+    const state: EloState = { sport, ratings: {}, lastGame: {}, recent: {}, history: [], builtAt: new Date().toISOString() };
+    let first = true;
+    for (const season of cfg.seasons) {
+      const games = await seasonGames(sport, season).catch(() => [] as GameResult[]);
+      if (!games.length) continue;
+      if (!first) regressSeason(state, cfg.carryover);
+      first = false;
+      for (const g of games) {
+        if (!g.final) continue;
+        state.history.push(applyGame(state, g));
+      }
     }
+    stateCache.set(sport, { exp: Date.now() + 15 * 60_000, state });
+    return state;
+  })();
+  inflight.set(sport, p);
+  try {
+    return await p;
+  } finally {
+    inflight.delete(sport);
   }
-  stateCache.set(sport, { exp: Date.now() + 15 * 60_000, state });
-  return state;
 }
 
 export function restDays(state: EloState, teamId: string, gameDate: string): number | null {
@@ -105,6 +115,17 @@ export function recentForm(state: EloState, teamId: string, n = 10) {
 
 export function leagueAvgPoints(state: EloState): number {
   const h = state.history.slice(-400);
-  if (!h.length) return state.sport === "nba" ? 113 : state.sport === "nfl" ? 22.5 : state.sport === "mlb" ? 4.4 : 3.0;
+  if (!h.length) return SPORTS[state.sport].avgPoints;
   return h.reduce((a, g) => a + g.homeScore + g.awayScore, 0) / (2 * h.length);
+}
+
+const countCache = new WeakMap<EloState, Record<string, number>>();
+/** Rated games per participant across the whole history (thin-history detection). */
+export function gamesPlayed(state: EloState): Record<string, number> {
+  let c = countCache.get(state);
+  if (c) return c;
+  c = {};
+  for (const g of state.history) { c[g.home.id] = (c[g.home.id] || 0) + 1; c[g.away.id] = (c[g.away.id] || 0) + 1; }
+  countCache.set(state, c);
+  return c;
 }

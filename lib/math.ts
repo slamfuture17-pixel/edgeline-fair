@@ -4,7 +4,7 @@ export function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
 }
 
-/** Standard normal CDF (Abramowitz-Stegun 7.1.26, |err| < 1.5e-7). */
+/** Standard normal CDF (Abramowitz-Stegun 7.1.26). */
 export function normCdf(z: number): number {
   const t = 1 / (1 + 0.2316419 * Math.abs(z));
   const d = 0.3989422804014327 * Math.exp((-z * z) / 2);
@@ -34,7 +34,6 @@ export function normInv(p: number): number {
   return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
 }
 
-/** Poisson CDF P(X <= k). */
 export function poissonCdf(k: number, lambda: number): number {
   if (lambda <= 0) return 1;
   let term = Math.exp(-lambda);
@@ -46,7 +45,6 @@ export function poissonCdf(k: number, lambda: number): number {
   return clamp(sum, 0, 1);
 }
 
-/** Negative binomial CDF P(X <= k) parameterised by mean and dispersion r (r -> inf = Poisson). */
 export function negBinCdf(k: number, mean: number, r: number): number {
   if (mean <= 0) return 1;
   if (!isFinite(r) || r > 1e6) return poissonCdf(k, mean);
@@ -76,7 +74,6 @@ export function weightedVar(xs: number[], ws: number[], mu: number): number {
   return w ? s / w : 0;
 }
 
-/** Box-Muller standard normal sample. */
 export function randn(): number {
   let u = 0, v = 0;
   while (u === 0) u = Math.random();
@@ -91,4 +88,16 @@ export function brier(p: number, y: 0 | 1): number {
 export function logLoss(p: number, y: 0 | 1): number {
   const q = clamp(p, 1e-6, 1 - 1e-6);
   return -(y * Math.log(q) + (1 - y) * Math.log(1 - q));
+}
+
+export function logit(p: number): number {
+  const q = clamp(p, 1e-6, 1 - 1e-6);
+  return Math.log(q / (1 - q));
+}
+export function sigmoid(x: number): number {
+  return 1 / (1 + Math.exp(-x));
+}
+/** Blend two probabilities in log-odds space with weight w on the first (keeps extremes extreme). */
+export function blendLogit(p1: number, p2: number, w: number): number {
+  return sigmoid(w * logit(p1) + (1 - w) * logit(p2));
 }
