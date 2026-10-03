@@ -3,18 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Header } from "@/components/header";
-import { SportTabs } from "@/components/sport-tabs";
 import { EdgeBadge, ConfidencePill } from "@/components/edge-badge";
 import { PickButton } from "@/components/pick-button";
 import { CardSkeletons, EmptyState } from "@/components/empty";
 import { useSettings } from "@/components/settings-provider";
 import { kickoff, pct, price, signedPct } from "@/lib/format";
+import { GROUPS, SPORTS, FEATURED_KEYS, type SportGroup } from "@/lib/sports";
+import { cn } from "@/lib/utils";
 import type { SideEdge } from "@/types";
 
-interface Edge extends SideEdge { sport: string; eventId: string; game: string; date: string; market: string; line?: number; confidence: "A" | "B" | "C" }
+interface Edge extends SideEdge { sport: string; league: string; eventId: string; game: string; date: string; market: string; line?: number; confidence: "A" | "B" | "C" }
 
 export default function EdgesPage() {
-  const [sport, setSport] = useState("all");
+  const [group, setGroup] = useState<SportGroup | "all">("all");
   const [edges, setEdges] = useState<Edge[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const { settings, update } = useSettings();
@@ -24,14 +25,20 @@ export default function EdgesPage() {
   }, []);
 
   const shown = useMemo(() => (edges || [])
-    .filter((e) => sport === "all" || e.sport === sport)
+    .filter((e) => group === "all" || SPORTS[e.sport]?.group === group)
     .filter((e) => e.edge >= settings.minEdge && e.ev > 0)
-    .filter((e) => e.price >= -400 && e.price <= 400), [edges, sport, settings.minEdge]);
+    .filter((e) => e.price >= -400 && e.price <= 400), [edges, group, settings.minEdge]);
+
+  const scanned = FEATURED_KEYS.map((k) => SPORTS[k]?.label).filter(Boolean).join(", ");
 
   return (
     <main>
       <Header title="Edge Finder" subtitle="Ranked by expected value vs. de-vigged price" />
-      <SportTabs value={sport} onChange={setSport} includeAll />
+      <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 py-3">
+        {(["all", ...GROUPS] as const).filter((g) => g === "all" || g !== "Tennis").map((g) => (
+          <button key={g} onClick={() => setGroup(g)} className={cn("shrink-0 rounded-full px-3.5 py-1.5 text-sm font-display font-bold border", group === g ? "bg-primary text-primary-foreground border-primary shadow-profit" : "bg-secondary/60 text-muted-foreground border-border")}>{g === "all" ? "All" : g}</button>
+        ))}
+      </div>
       <div className="px-4 pb-3 flex items-center justify-between text-xs">
         <span className="text-muted-foreground">Min edge</span>
         <div className="flex gap-1">
@@ -41,17 +48,17 @@ export default function EdgesPage() {
         </div>
       </div>
       {err && <EmptyState title="Couldn't load edges" body={err} />}
-      {!edges && !err && <CardSkeletons n={5} />}
+      {!edges && !err && <><p className="px-6 pb-2 text-[11px] text-muted-foreground text-center">Scanning {FEATURED_KEYS.length} leagues… first scan of the day can take a minute.</p><CardSkeletons n={5} /></>}
       {edges && shown.length === 0 && <EmptyState title="No edges above your threshold" body="Lower the minimum edge or check back closer to game time." />}
       <div className="px-4 space-y-2">
-        {shown.slice(0, 60).map((e, i) => {
+        {shown.slice(0, 80).map((e, i) => {
           const stake = Math.round(settings.bankroll * settings.kellyFraction * e.kelly);
           return (
-            <div key={`${e.eventId}-${e.market}-${e.side}`} className="glass rounded-2xl p-3 animate-rise-in" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
+            <div key={`${e.sport}-${e.eventId}-${e.market}-${e.side}`} className="glass rounded-2xl p-3 animate-rise-in" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
               <div className="flex items-center justify-between">
                 <Link href={`/game/${e.sport}/${e.eventId}`} className="min-w-0">
                   <div className="font-display font-bold truncate"><span className="text-primary">{e.side}</span> <span className="text-muted-foreground font-mono text-xs">{price(e.price, settings.oddsFormat)}</span></div>
-                  <div className="text-[11px] text-muted-foreground">{e.sport.toUpperCase()} · {e.game} · {kickoff(e.date)} · {e.market}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">{e.league} · {e.game} · {kickoff(e.date)} · {e.market}</div>
                 </Link>
                 <div className="text-right shrink-0">
                   <EdgeBadge edge={e.edge} />
@@ -63,13 +70,13 @@ export default function EdgesPage() {
                   <ConfidencePill tier={e.confidence} />
                   model {pct(e.modelProb, 1)} · mkt {pct(e.marketProb, 1)} · stake ${stake}
                 </div>
-                <PickButton compact id={`${e.sport}:${e.eventId}:${e.market}:${e.side}`} sport={e.sport} eventId={e.eventId} game={e.game} homeAbbr={e.game.split(" @ ")[1]} date={e.date} market={e.market} side={e.side} line={e.line} price={e.price} modelProb={e.modelProb} marketProb={e.marketProb} />
+                <PickButton compact id={`${e.sport}:${e.eventId}:${e.market}:${e.side}`} sport={e.sport} eventId={e.eventId} game={e.game} homeAbbr={e.game.split(" @ ")[1] ?? ""} date={e.date} market={e.market} side={e.side} line={e.line} price={e.price} modelProb={e.modelProb} marketProb={e.marketProb} />
               </div>
             </div>
           );
         })}
       </div>
-      <p className="px-6 pt-5 text-[11px] text-muted-foreground text-center">Stake = bankroll × {Math.round(settings.kellyFraction * 100)}% Kelly. Edges are small by design: the closing market is very efficient, and the Record tab shows exactly how our disagreements have fared.</p>
+      <p className="px-6 pt-5 text-[11px] text-muted-foreground text-center">Scans: {scanned}. Stake = bankroll × {Math.round(settings.kellyFraction * 100)}% Kelly. Tennis is excluded (no price feed). Edges are small by design — the Record tab shows how our disagreements have fared.</p>
     </main>
   );
 }
