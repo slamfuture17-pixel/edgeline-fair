@@ -1,6 +1,6 @@
 # EdgeLine Fair — AI sports predictions & player props (mobile-first PWA)
 
-Calibrated win/spread/total probabilities and player-prop projections for **NFL, NBA, MLB and NHL**, built on real data, blended with the de-vigged betting market, and graded honestly against final scores and closing lines.
+Calibrated probabilities and player-prop projections for **NFL, NCAAF, NBA, WNBA, NCAAB, MLB, NHL, 22 soccer leagues, ATP/WTA tennis and UFC**, built on real data, blended with the de-vigged betting market, and graded honestly against final scores and closing lines.
 
 ## Deploy in one click
 
@@ -8,38 +8,38 @@ Calibrated win/spread/total probabilities and player-prop projections for **NFL,
 
 Then open the Vercel URL on your phone → Share → **Add to Home Screen**.
 
-## What's inside
+## Coverage
 
-| Layer | Implementation |
-|---|---|
-| **Data** | ESPN public feeds (no API key): schedules & results, live scoreboard, DraftKings lines incl. open/close, player-prop lines, rosters, injuries, per-game player logs. Adapter in `lib/espn.ts`; cache in `lib/cache.ts`. |
-| **Game model** | `lib/elo.ts` margin-of-victory Elo with home advantage, season regression, rest; `lib/predict.ts` blends with the de-vigged market (power + Shin, `lib/odds.ts`), prices spreads/totals, computes EV + Kelly and plain-English factors; `app/api/game` runs a 10,000-draw Monte Carlo for alt lines. |
-| **Props model** | `lib/props.ts` — two seasons of game logs, recency-weighted, role-filtered, shrunk toward the posted line, priced with normal (yardage) or negative-binomial (counts) distributions. |
-| **Honesty** | `lib/store.ts` logs every displayed best-side and grades it after the final (hit rate, ROI, Brier, CLV). `lib/backtest.ts` walk-forward backtest vs. the closing market. Nothing on the Record tab is filtered. |
-| **App** | Next.js 15 / React 19 / Tailwind, dark neon theme, bottom tabs, installable PWA. Screens: Today, Game detail, Props, Edge Finder, My Picks, Record, Settings. |
+| Group | Leagues | Market feed |
+|---|---|---|
+| Football | NFL, College Football (FBS) | DraftKings ML / spread / total |
+| Basketball | NBA, WNBA, College Basketball (D-I) | DraftKings ML / spread / total |
+| Baseball / Hockey | MLB, NHL | DraftKings ML / run-puck line / total |
+| Soccer | EPL, La Liga, Bundesliga, Serie A, Ligue 1, UCL, Europa, MLS, Liga MX, Brasileirão, Argentina, Eredivisie, Primeira, Championship, Süper Lig, SPFL, Belgium, Saudi, J-League, A-League, Libertadores, NWSL | DraftKings 3-way + goal total |
+| Tennis | ATP, WTA | none in source → model-only |
+| MMA | UFC | DraftKings fight moneyline |
+
+Boxing has no public data feed and is intentionally excluded rather than faked.
+
+## Models
+
+- **Team sports** — margin-of-victory Elo (home advantage, season regression, rest), blended with the de-vigged market in log-odds space; normal margin/total pricing; 10,000-run Monte Carlo for alt lines. Participants with <3 rated games defer 95% to the market.
+- **Soccer** — Elo margin + scoring form → Poisson goal rates → win/draw/win and goal-total probabilities, blended with the de-vigged three-way price (power method).
+- **Tennis / UFC** — per-athlete Elo from every tour match (39k tennis matches, 1.6k UFC bouts). UFC blends with DraftKings; tennis is model-only.
+- **Props** — two seasons of player game logs, recency-weighted, role-filtered, shrunk toward the posted line; normal (yardage) or negative-binomial (counts).
+- **Honesty** — every displayed best-side is logged and graded after the final (hit rate, ROI, Brier, CLV); walk-forward backtests on the Record tab.
 
 ## Run locally
 
 ```bash
 npm install
-npm run backtest   # writes data/backtest-*.json for the Record tab
-npm run dev        # http://localhost:3000
+npm run backtest nfl   # per league; writes data/backtest-*.json
+npm run dev            # http://localhost:3000
 ```
-
-## Backtest (walk-forward, real games)
-
-| Sport | Games | Elo Brier | Closing-market Brier | Blend Brier |
-|---|---|---|---|---|
-| NFL | 618 | 0.2211 | 0.2163 | 0.2168 |
-| NBA | 2,631 | 0.2133 | 0.1748 | **0.1726** |
-| MLB | 4,915 | 0.2455 | 0.2329 | 0.2333 |
-| NHL | 1,415 | 0.2476 | 0.2364 | 0.2377 |
-
-Lower is better; 0.25 = coin flip.
 
 ## Production notes
 
-- On Vercel the prediction ledger and cache write to `/tmp` (ephemeral). Point `lib/store.ts` / `lib/cache.ts` at Postgres/KV for persistence, and run `npm run backtest` on a nightly cron to refresh the Record tab.
+On Vercel the ledger and cache write to `/tmp` (ephemeral). Point `lib/store.ts` / `lib/cache.ts` at Postgres/KV for persistence, and refresh backtests on a nightly cron.
 
 ## Responsible use
 

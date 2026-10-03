@@ -11,13 +11,14 @@ import { PickButton } from "./pick-button";
 import { CardSkeletons, EmptyState } from "./empty";
 import { useSettings } from "./settings-provider";
 import { kickoff, pct, price, spread, signedPct } from "@/lib/format";
+import { SPORTS } from "@/lib/sports";
 import type { GamePrediction } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface Detail {
   game: GamePrediction;
   injuries: { team: string; player: string; position: string; status: string; detail?: string }[];
-  sim: { n: number; homeWinProb: number; projHome: number; projAway: number; histogram: { bucket: number; pct: number }[]; altSpreads: { line: number; homeCover: number }[]; altTotals: { line: number; over: number }[] };
+  sim: { n: number; homeWinProb: number; projHome: number; projAway: number; histogram: { bucket: number; pct: number }[]; altSpreads: { line: number; homeCover: number }[]; altTotals: { line: number; over: number }[] } | null;
 }
 
 export function GameDetail({ sport, id }: { sport: string; id: string }) {
@@ -35,75 +36,82 @@ export function GameDetail({ sport, id }: { sport: string; id: string }) {
   if (err) return <main><Header title="Game" back="/" /><EmptyState title="Game not found" body={err} /></main>;
   if (!d) return <main><Header title="Loading…" back="/" /><CardSkeletons n={3} /></main>;
   const g = d.game;
-  const label = `${g.away.abbr} @ ${g.home.abbr}`;
+  const cfg = SPORTS[g.sport];
+  const athlete = g.kind === "athlete";
+  const soccer = !!cfg?.draws;
+  const label = athlete ? `${g.away.abbr} vs ${g.home.abbr}` : `${g.away.abbr} @ ${g.home.abbr}`;
+  const hasProps = !athlete && Object.keys(cfg?.propStatMap ?? {}).length > 0;
 
   return (
     <main>
-      <Header title={label} subtitle={g.status === "final" ? "Final" : `${kickoff(g.date)}${g.venue ? ` · ${g.venue}` : ""}`} back="/" />
+      <Header title={label} subtitle={`${cfg?.name ?? ""} · ${g.status === "final" ? "Final" : kickoff(g.date)}${g.eventName && athlete ? ` · ${g.eventName}` : g.venue ? ` · ${g.venue}` : ""}`} back="/" />
       <div className="px-4 pt-4 space-y-4">
         <section className="glass rounded-2xl p-4 space-y-3">
-          <TeamRow {...g.away} score={g.awayScore} right={<span className="font-mono text-sm text-muted-foreground num">{d.sim.projAway.toFixed(1)}</span>} />
-          <TeamRow {...g.home} score={g.homeScore} right={<span className="font-mono text-sm text-muted-foreground num">{d.sim.projHome.toFixed(1)}</span>} />
-          <div className="text-[10px] text-muted-foreground text-right -mt-2">projected score</div>
-          <ProbBar homeProb={g.model.homeWinProb} marketHome={g.marketFair?.homeWinProb} homeAbbr={g.home.abbr} awayAbbr={g.away.abbr} />
+          <TeamRow {...g.away} score={g.awayScore} right={d.sim ? <span className="font-mono text-sm text-muted-foreground num">{d.sim.projAway.toFixed(soccer ? 2 : 1)}</span> : undefined} />
+          <TeamRow {...g.home} score={g.homeScore} right={d.sim ? <span className="font-mono text-sm text-muted-foreground num">{d.sim.projHome.toFixed(soccer ? 2 : 1)}</span> : undefined} />
+          {d.sim && <div className="text-[10px] text-muted-foreground text-right -mt-2">projected {soccer ? "goals" : "score"}</div>}
+          <ProbBar homeProb={g.model.homeWinProb} drawProb={g.model.drawProb} marketHome={g.marketFair?.homeWinProb} homeAbbr={g.home.abbr} awayAbbr={g.away.abbr} />
           <div className="grid grid-cols-3 gap-2 text-center">
-            <Stat label="Elo only" value={pct(g.elo.homeWinProb)} sub={g.home.abbr} />
-            <Stat label="Market fair" value={g.marketFair ? pct(g.marketFair.homeWinProb) : "—"} sub={g.marketFair ? `${g.marketFair.vig.toFixed(1)}% hold` : "no line"} />
+            <Stat label="Rating only" value={pct(g.elo.homeWinProb)} sub={g.home.abbr} />
+            <Stat label="Market fair" value={g.marketFair ? pct(g.marketFair.homeWinProb) : "—"} sub={g.marketFair ? `${g.marketFair.vig.toFixed(1)}% hold` : g.modelOnly ? "no feed" : "no line"} />
             <Stat label="Blend" value={pct(g.model.homeWinProb)} sub={`${Math.round(g.model.marketWeight * 100)}% market`} accent />
           </div>
+          {g.modelOnly && <p className="text-[11px] text-warn">No bookmaker prices exist for this tour in our data source. Probabilities are pure model output; no edge or stake is shown.</p>}
         </section>
 
-        <section className="space-y-2">
-          <h2 className="text-xs uppercase tracking-widest text-muted-foreground font-display px-1">Markets <span className="normal-case tracking-normal">· {g.market?.provider ?? "model only"}</span></h2>
-          {g.predictions.map((m) => (
-            <div key={m.market} className="glass rounded-2xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-display font-bold capitalize">{m.market}{m.line !== undefined && m.market === "total" ? ` ${m.line}` : ""}</span>
-                <ConfidencePill tier={g.confidence} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {m.sides.map((s) => {
-                  const best = m.best?.side === s.side;
-                  return (
-                    <div key={s.side} className={cn("rounded-xl p-3 border", best && s.edge > 0 ? "border-primary/50 bg-primary/5" : "border-border bg-secondary/40")}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-display font-bold text-sm">{s.side}</span>
-                        <span className="font-mono text-xs text-muted-foreground num">{price(s.price, settings.oddsFormat)}</span>
-                      </div>
-                      <div className="mt-2 flex items-end justify-between">
-                        <div>
-                          <div className="font-mono text-lg font-bold num leading-none">{pct(s.modelProb, 1)}</div>
-                          <div className="text-[10px] text-muted-foreground">mkt {pct(s.marketProb, 1)}</div>
+        {!g.modelOnly && (
+          <section className="space-y-2">
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground font-display px-1">Markets <span className="normal-case tracking-normal">· {g.market?.provider ?? "model only"}</span></h2>
+            {g.predictions.map((m) => (
+              <div key={m.market} className="glass rounded-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-display font-bold capitalize">{m.market === "moneyline" && soccer ? "Win / Draw / Win" : m.market}{m.line !== undefined && m.market === "total" ? ` ${m.line}` : ""}</span>
+                  <ConfidencePill tier={g.confidence} />
+                </div>
+                <div className={cn("grid gap-2", m.sides.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+                  {m.sides.map((s) => {
+                    const best = m.best?.side === s.side;
+                    return (
+                      <div key={s.side} className={cn("rounded-xl p-2.5 border", best && s.edge > 0 ? "border-primary/50 bg-primary/5" : "border-border bg-secondary/40")}>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-display font-bold text-xs truncate">{s.side}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground num shrink-0">{price(s.price, settings.oddsFormat)}</span>
                         </div>
-                        <EdgeBadge edge={s.edge} />
-                      </div>
-                      {best && s.edge > 0 && g.status === "scheduled" && (
-                        <div className="mt-2 flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground">EV {signedPct(s.ev)} · Kelly {(s.kelly * settings.kellyFraction * 100).toFixed(1)}%</span>
-                          <PickButton compact id={`${g.sport}:${g.id}:${m.market}:${s.side}`} sport={g.sport} eventId={g.id} game={label} homeAbbr={g.home.abbr} date={g.date} market={m.market} side={s.side} line={m.line} price={s.price} modelProb={s.modelProb} marketProb={s.marketProb} />
+                        <div className="mt-2 flex items-end justify-between gap-1">
+                          <div>
+                            <div className="font-mono text-base font-bold num leading-none">{pct(s.modelProb, 1)}</div>
+                            <div className="text-[10px] text-muted-foreground">mkt {pct(s.marketProb, 1)}</div>
+                          </div>
+                          <EdgeBadge edge={s.edge} />
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        {best && s.edge > 0 && g.status === "scheduled" && (
+                          <div className="mt-2 flex items-center justify-between gap-1">
+                            <span className="text-[10px] text-muted-foreground">EV {signedPct(s.ev)}</span>
+                            <PickButton compact id={`${g.sport}:${g.id}:${m.market}:${s.side}`} sport={g.sport} eventId={g.id} game={label} homeAbbr={g.home.abbr} date={g.date} market={m.market} side={s.side} line={m.line} price={s.price} modelProb={s.modelProb} marketProb={s.marketProb} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-          {g.market && (
-            <div className="text-[11px] text-muted-foreground px-1 font-mono num">
-              Open: {g.home.abbr} {g.market.openSpreadHome !== undefined ? spread(g.market.openSpreadHome) : "—"} / {g.market.openTotal ?? "—"} · Now: {g.market.spreadHome !== undefined ? spread(g.market.spreadHome) : "—"} / {g.market.total ?? "—"}
-            </div>
-          )}
-        </section>
+            ))}
+            {g.market && (g.market.openSpreadHome !== undefined || g.market.openTotal !== undefined) && (
+              <div className="text-[11px] text-muted-foreground px-1 font-mono num">
+                Open: {g.home.abbr} {g.market.openSpreadHome !== undefined ? spread(g.market.openSpreadHome) : "—"} / {g.market.openTotal ?? "—"} · Now: {g.market.spreadHome !== undefined ? spread(g.market.spreadHome) : "—"} / {g.market.total ?? "—"}
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="glass rounded-2xl p-4">
           <h2 className="font-display font-bold mb-1">Why</h2>
           <ul className="divide-y divide-border">
             {g.factors.map((f) => (
               <li key={f.label} className="py-2.5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium">{f.label}</span>
-                  <span className={cn("font-mono text-xs num", f.impact > 0 ? "text-profit" : f.impact < 0 ? "text-loss" : "text-muted-foreground")}>{f.value}</span>
+                  <span className={cn("font-mono text-xs num text-right", f.impact > 0 ? "text-profit" : f.impact < 0 ? "text-loss" : "text-muted-foreground")}>{f.value}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{f.explanation}</p>
               </li>
@@ -111,24 +119,29 @@ export function GameDetail({ sport, id }: { sport: string; id: string }) {
           </ul>
         </section>
 
-        <section className="glass rounded-2xl p-4">
-          <h2 className="font-display font-bold">Margin simulation <span className="text-xs text-muted-foreground font-body font-normal">({d.sim.n.toLocaleString()} runs)</span></h2>
-          <p className="text-xs text-muted-foreground mb-2">Home margin ({g.home.abbr} minus {g.away.abbr}). Expected {g.model.expectedMargin > 0 ? "+" : ""}{g.model.expectedMargin.toFixed(1)}, total {g.model.expectedTotal.toFixed(1)}.</p>
-          <ResponsiveContainer width="100%" height={150}>
-            <BarChart data={d.sim.histogram} margin={{ left: -24, right: 0, top: 4, bottom: 0 }}>
-              <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: "#8a90a8" }} tickLine={false} axisLine={false} interval={2} />
-              <YAxis tick={{ fontSize: 10, fill: "#8a90a8" }} tickFormatter={(v) => `${Math.round(v * 100)}%`} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ background: "#10121a", border: "1px solid #22263a", borderRadius: 12, fontSize: 12 }} formatter={(v) => [`${(Number(v) * 100).toFixed(1)}%`, "prob"]} labelFormatter={(l) => `margin ≈ ${l}`} />
-              <Bar dataKey="pct" radius={[4, 4, 0, 0]}>
-                {d.sim.histogram.map((h) => <Cell key={h.bucket} fill={h.bucket > 0 ? "#0aff8c" : h.bucket < 0 ? "#ff3d7f" : "#8a90a8"} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <AltTable title={`${g.home.abbr} alt spreads`} rows={d.sim.altSpreads.map((r) => [spread(r.line), pct(r.homeCover)])} />
-            <AltTable title="Alt totals (over)" rows={d.sim.altTotals.map((r) => [String(r.line), pct(r.over)])} />
-          </div>
-        </section>
+        {d.sim && (
+          <section className="glass rounded-2xl p-4">
+            <h2 className="font-display font-bold">Margin simulation <span className="text-xs text-muted-foreground font-body font-normal">({d.sim.n.toLocaleString()} runs)</span></h2>
+            <p className="text-xs text-muted-foreground mb-2">Home margin ({g.home.abbr} minus {g.away.abbr}). Expected {g.model.expectedMargin > 0 ? "+" : ""}{g.model.expectedMargin.toFixed(soccer ? 2 : 1)}, total {g.model.expectedTotal.toFixed(soccer ? 2 : 1)}.</p>
+            <ResponsiveContainer width="100%" height={150}>
+              <BarChart data={d.sim.histogram} margin={{ left: -24, right: 0, top: 4, bottom: 0 }}>
+                <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: "#8a90a8" }} tickLine={false} axisLine={false} interval={soccer ? 0 : 2} />
+                <YAxis tick={{ fontSize: 10, fill: "#8a90a8" }} tickFormatter={(v) => `${Math.round(v * 100)}%`} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ background: "#10121a", border: "1px solid #22263a", borderRadius: 12, fontSize: 12 }} formatter={(v) => [`${(Number(v) * 100).toFixed(1)}%`, "prob"]} labelFormatter={(l) => `margin ≈ ${l}`} />
+                <Bar dataKey="pct" radius={[4, 4, 0, 0]}>
+                  {d.sim.histogram.map((h) => <Cell key={h.bucket} fill={h.bucket > 0 ? "#0aff8c" : h.bucket < 0 ? "#ff3d7f" : "#8a90a8"} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            {cfg?.hasSpread && (
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <AltTable title={`${g.home.abbr} alt spreads`} rows={d.sim.altSpreads.map((r) => [spread(r.line), pct(r.homeCover)])} />
+                <AltTable title="Alt totals (over)" rows={d.sim.altTotals.map((r) => [String(r.line), pct(r.over)])} />
+              </div>
+            )}
+            {soccer && <div className="mt-3"><AltTable title="Goal totals (over)" rows={d.sim.altTotals.map((r) => [String(r.line), pct(r.over)])} /></div>}
+          </section>
+        )}
 
         {d.injuries.length > 0 && (
           <section className="glass rounded-2xl p-4">
@@ -144,7 +157,7 @@ export function GameDetail({ sport, id }: { sport: string; id: string }) {
           </section>
         )}
 
-        <Link href={`/props?sport=${g.sport}&id=${g.id}`} className="block text-center rounded-2xl bg-primary text-primary-foreground font-display font-bold py-3">View player props for this game →</Link>
+        {hasProps && <Link href={`/props?sport=${g.sport}&id=${g.id}`} className="block text-center rounded-2xl bg-primary text-primary-foreground font-display font-bold py-3">View player props for this game →</Link>}
       </div>
     </main>
   );
