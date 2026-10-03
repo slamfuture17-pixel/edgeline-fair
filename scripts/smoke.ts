@@ -1,7 +1,7 @@
 import { slate } from "../lib/predict";
 import { propsForGame } from "../lib/props";
 import { upcoming } from "../lib/espn";
-import { isSportKey } from "../lib/sports";
+import { isSportKey, SPORTS } from "../lib/sports";
 
 async function main() {
   const sport = process.argv[2] && isSportKey(process.argv[2]) ? process.argv[2] : "nfl";
@@ -11,7 +11,7 @@ async function main() {
   for (const g of s.slice(0, 6)) {
     console.log(`${g.away.abbr} @ ${g.home.abbr} ${g.status} | elo ${(g.elo.homeWinProb * 100).toFixed(0)}% mkt ${g.marketFair ? (g.marketFair.homeWinProb * 100).toFixed(0) + "%" : "-"} model ${(g.model.homeWinProb * 100).toFixed(0)}% | top: ${g.topEdge?.side} edge ${((g.topEdge?.edge ?? 0) * 100).toFixed(1)}% conf ${g.confidence}`);
   }
-  const games = await upcoming(sport, 3);
+  const games = SPORTS[sport].kind === "team" && Object.keys(SPORTS[sport].propStatMap).length ? await upcoming(sport, 3) : [];
   const g = games.find((x) => x.status === "scheduled");
   if (g) {
     const props = await propsForGame(sport, g);
